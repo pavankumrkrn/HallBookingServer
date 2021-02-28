@@ -1,7 +1,10 @@
 
 const express = require('express');
-var cors = require('cors')
+const bcrypt = require('bcryptjs');
+var cors = require('cors');
+const { createJWT, authenticate } = require('./auth')
 const mongodb = require('mongodb');
+const nodemailer = require('nodemailer');
 const mongoClient = mongodb.MongoClient;
 const dbURL = 'mongodb+srv://pavankumarkrn:kris770297@cluster0.l3mwo.mongodb.net/HallBooking?retryWrites=true&w=majority'
 
@@ -113,16 +116,177 @@ app.get("/rooms", async (req, res) => {
 
 app.post('/signUp', async (req, res) => {
     let user = { ...req.body };
-    user['emailVerified'] = false
-    user['address'] = '';
-    user['orders'] = [];
+    try {
+        const client = await mongoClient.connect(dbURL, { useNewUrlParser: true, useUnifiedTopology: true });
+        let db = client.db('PasswordCheckingApp');
+        let exUser = await db.collection('users').findOne({ email: user.email }, {});
+        console.log(exUser);
+        if (exUser === null) {
+            let salt = await bcrypt.genSalt(10);
+            console.log(user.password)
+            let hash = await bcrypt.hash(user.password, salt);
+            user.password = hash;
+            console.log(user)
+            await db.collection('users').insertOne(user);
+            res.json({
+                message: 'SignUp successful'
+            })
+
+        } else {
+            res.json({
+                message: 'Email Id already exists'
+            })
+        }
+    } catch (error) {
+        console.log(error)
+        res.json({
+            message: 'SignUp failed'
+        })
+    }
+});
+
+app.post('/login', async (req, res) => {
+    let user = { ...req.body };
     console.log(user)
     try {
-        // const client = await mongoClient.connect(dbURL, { useNewUrlParser: true, useUnifiedTopology: true });
-        // let db = client.db('pizzadeliveryapp');
+        const client = await mongoClient.connect(dbURL, { useNewUrlParser: true, useUnifiedTopology: true });
+        const db = client.db('PasswordCheckingApp');
+        let usr = await db.collection('users').findOne({ email: user.email }, {});
+        console.log(usr);
+        if (usr) {
+            let result = await bcrypt.compare(user.password, usr.password);
+            if (result) {
+                const token = await createJWT({ id: usr._id });
+                console.log(token)
+                res.json({
+                    message: 'Login Successful',
+                    code: 'green',
+                    token,
+                    user: usr
+                })
+            } else {
+                res.json({
+                    message: 'Wrong Password',
+                    code: "red"
+                })
+            }
+        } else {
+            res.json({
+                message: 'Invalid Credentials',
+                code: 'red'
+            })
+        }
 
     } catch (error) {
+        console.log(error)
+        res.json({
+            message: 'Login Failed'
+        })
 
+    }
+});
+
+app.get('/users', authenticate, async (req, res) => {
+    try {
+        const client = await mongoClient.connect(dbURL, { useNewUrlParser: true, useUnifiedTopology: true });
+        let db = client.db('PasswordCheckingApp');
+        let users = await db.collection('users').find().toArray();
+        res.json({
+            message: 'users fetched',
+            code: 'green',
+            users
+        })
+    } catch (error) {
+        res.json({
+            message: 'Fetching users failed',
+            code: 'red'
+        })
+
+    }
+});
+
+app.post('/forgotPassword', async (req, res) => {
+    try {
+        const client = await mongoClient.connect(dbURL, { useNewUrlParser: true, useUnifiedTopology: true });
+        let db = client.db('PasswordCheckingApp');
+        let usr = await db.collection('users').findOne({ email: req.body.email }, {});
+        console.log(usr)
+        if (usr !== null) {
+            let salt = await bcrypt.genSalt(10);
+            let hash = await bcrypt.hash(req.body.password, salt);
+            usr.password = hash;
+            await db.collection('users').update({ _id: usr._id }, usr);
+            res.json({
+                message: 'Password updated successfully',
+                code: 'green'
+            })
+
+        } else {
+            res.json({
+                message: 'User not found',
+                code: 'red'
+            })
+        }
+
+    } catch (error) {
+        console.log(error)
+        res.json({
+            message: 'Process Failed',
+            code: 'red'
+        })
+
+    }
+});
+
+app.post('/checkEmail', async (req, res) => {
+    try {
+        const client = await mongoClient.connect(dbURL, { useNewUrlParser: true, useUnifiedTopology: true });
+        const db = client.db('PasswordCheckingApp');
+        let usr = await db.collection('users').findOne({ email: req.body.email }, {});
+        if (usr === null) {
+            res.json({
+                message: 'No user found',
+                code: 'red'
+            })
+        } else {
+            let transporter = nodemailer.createTransport({
+                service: 'gmail',
+                auth: {
+                    user: 'krishna49m@gmail.com',
+                    pass: '949362974996'
+                }
+            })
+            const otp = Math.floor(100000 + Math.random() * 900000)
+            let mailOptions = {
+                from: 'krishna49m@gmail.com',
+                to: usr.email,
+                subject: 'OTP',
+                text: '' + otp
+            }
+
+            transporter.sendMail(mailOptions, (err, data) => {
+                if (err) {
+                    console.log(err);
+                    res.json({
+                        message: 'Process Failed',
+                        code: 'red'
+                    })
+                } else {
+                    res.json({
+                        message: 'OTP sent successfully',
+                        code: 'green',
+                        otp,
+                        email: usr.email
+                    })
+                }
+            })
+        }
+    } catch (error) {
+        console.log(error);
+        res.json({
+            message: 'Process Failed',
+            code: 'red'
+        })
     }
 })
 
