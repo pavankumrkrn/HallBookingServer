@@ -126,6 +126,8 @@ app.post('/signUp', async (req, res) => {
             console.log(user.password)
             let hash = await bcrypt.hash(user.password, salt);
             user.password = hash;
+            user.playlists = [];
+            user.history = [];
             console.log(user)
             await db.collection('users').insertOne(user);
             res.json({
@@ -204,6 +206,14 @@ app.get('/users', authenticate, async (req, res) => {
 
     }
 });
+
+app.get('/messages', authenticate, async (req, res) => {
+    try {
+
+    } catch (error) {
+
+    }
+})
 
 app.post('/forgotPassword', async (req, res) => {
     try {
@@ -288,7 +298,40 @@ app.post('/checkEmail', async (req, res) => {
             code: 'red'
         })
     }
-})
+});
+
+app.post('/updateUser', authenticate, async (req, res) => {
+    try {
+        console.log(req.body);
+        const client = await mongoClient.connect(dbURL, { useNewUrlParser: true, useUnifiedTopology: true });
+        const db = client.db('PasswordCheckingApp');
+        let usr = await db.collection('users').findOne({ email: req.body.email }, {});
+        delete req.body._id;
+        if (usr === null) {
+            res.json({
+                message: 'No user found',
+                code: 'red'
+            })
+        } else {
+            await db.collection('users').updateOne({ "email": req.body.email }, { "$set": req.body }, { "upsert": false });
+            res.json({
+                user: req.body,
+                message: 'User Updated',
+                code: 'green'
+            })
+        }
+
+    } catch (error) {
+        console.log(error)
+        res.json({
+            message: 'Updation failed',
+            code: 'red'
+        })
+    }
+});
+
+
+
 
 app.post('/rooms/:roomId/:date/:slot', async (req, res) => {
     try {
